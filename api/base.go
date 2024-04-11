@@ -9,7 +9,7 @@ import (
 )
 
 var db *gorm.DB
-var Path_to_photos string
+var Path_to_photos, Path_to_cach_photos string
 
 func InitBase() error {
 
@@ -35,6 +35,7 @@ func InitBase() error {
 	db.Debug().AutoMigrate(&Photo{})
 
 	Path_to_photos = os.Getenv("path_to_photos")
+	Path_to_cach_photos = os.Getenv("path_to_cach_photos")
 
 	return nil
 }

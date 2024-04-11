@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/jinzhu/gorm"
+	"github.com/minio/minio-go/v7"
 	u "gopractice/tools"
 	"os"
 	"strconv"
@@ -18,8 +20,8 @@ type Token struct {
 // a struct to upload file
 type Photo struct {
 	gorm.Model
-	Description string `json:"description"`
 	Sort        int    `json:"sort"`
+	Description string `json:"description"`
 	ProductCode string `json:"productcode"`
 	File        string `json:"file"`
 	Uuid        string `json:"uuid"`
@@ -42,7 +44,7 @@ func (photo *Photo) Upload() (map[string]interface{}, error) {
 	db := GetDB()
 
 	// Update
-	result := db.Model(photo).Where("product_code = ?", photo.ProductCode).Where("sort = ?", photo.Sort).Updates(photo)
+	result := db.Model(&photo).Where("product_code = ?", photo.ProductCode).Where("sort = ?", photo.Sort).Updates(&photo)
 	if result.Error != nil {
 		return u.Message(false, "fail to update data"), result.Error
 	}
@@ -65,7 +67,7 @@ func (photo *Photo) Validate(val int) (map[string]interface{}, bool) {
 		return u.Message(false, "Description is empty"), false
 	}
 
-	if len(string(photo.Sort)) == 0 {
+	if photo.Sort == 0 {
 		return u.Message(false, "Sort is empty"), false
 	}
 
@@ -104,18 +106,62 @@ func (photo *Photo) Update() (map[string]interface{}, error) {
 
 	db := GetDB()
 
+	newSort := strconv.Itoa(photo.Sort)
+	newDescription := photo.Description
 	// Find first record according to condition "uuid = ?"
-	result1 := db.Model(photo).Where("uuid = ?", photo.Uuid).First(&photo)
+	result1 := db.Model(&photo).Where("uuid = ?", photo.Uuid).First(&photo)
+	if result1.RowsAffected <= 0 {
+		return u.Message(false, "Record not found"), result1.Error
+	}
 
-	fileName := photo.File
-	extension := fileName[strings.LastIndex(fileName, "."):]
-	newFileName := Path_to_photos + photo.ProductCode + "_" + strconv.Itoa(photo.Sort) + extension
-	err := os.Rename(photo.File, newFileName)
+	preSort := strconv.Itoa(photo.Sort)
+	extension := photo.File[strings.LastIndex(photo.File, "."):]
+	fileName := photo.ProductCode + "_" + preSort + extension
+	newFileName := photo.ProductCode + "_" + newSort + extension
+
+	boolValue, err := strconv.ParseBool(os.Getenv("useS3"))
 	if err != nil {
-		return u.Message(false, "fail to update file name"), err
+		return u.Message(false, "Can't convert str to bool type"), err
+	}
+	if boolValue {
+		minioClient := GetMinio()
+		// Source object
+		srcOpts := minio.CopySrcOptions{
+			Bucket: Minio_BucketName,
+			Object: fileName,
+		}
+		// Destination object
+		dstOpts := minio.CopyDestOptions{
+			Bucket: Minio_BucketName,
+			Object: newFileName,
+		}
+		// Copy object call
+
+		_, err := minioClient.CopyObject(context.Background(), dstOpts, srcOpts)
+		//fmt.Println(res)
+		if err != nil {
+			return u.Message(false, "MinIO copy error"), err
+		}
+		opts := minio.RemoveObjectOptions{
+			GovernanceBypass: true,
+		}
+		err = minioClient.RemoveObject(context.Background(), Minio_BucketName, fileName, opts)
+		if err != nil {
+			return u.Message(false, "MinIO remove error"), err
+		}
+
+	} else {
+		err := os.Rename(Path_to_photos+fileName, Path_to_photos+newFileName)
+		if err != nil {
+			return u.Message(false, "fail to update file name"), err
+		}
 	}
 	//Update
 	photo.File = newFileName
+	if photo.Sort, err = strconv.Atoi(newSort); err != nil {
+		return u.Message(false, "fail to convert Atoi"), err
+	}
+	photo.Description = newDescription
 	result := result1.Updates(photo)
 	if result.Error != nil {
 		return u.Message(false, "fail to update data"), err

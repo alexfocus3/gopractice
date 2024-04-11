@@ -27,7 +27,7 @@ var JwtAuthentication = func(next http.Handler) http.Handler {
 			}
 		}
 
-		response := make(map[string]interface{})
+		var response map[string]interface{}
 		tokenHeader := r.Header.Get("Authorization") //Получение токена
 
 		if tokenHeader == "" { //Токен отсутствует, возвращаем  403 http-код Unauthorized

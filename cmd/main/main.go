@@ -19,13 +19,20 @@ func main() {
 }
 
 func run() error {
-	err := godotenv.Load()
+	//ctx, cancel := context.WithCancel(context.Background())
+	//defer cancel()
 
+	err := godotenv.Load()
 	if err != nil {
 		return err
 	}
 
 	err = api.InitBase()
+	if err != nil {
+		return err
+	}
+
+	err = api.InitMinio()
 	if err != nil {
 		return err
 	}
